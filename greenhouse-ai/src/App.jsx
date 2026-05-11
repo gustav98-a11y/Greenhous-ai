@@ -351,53 +351,50 @@ function CameraAnalysis({ plants, onAddPlant, onAddToSchedule, onClose, weather,
 
   async function analyze(b64, mediaType="image/jpeg") {
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
+      const weatherContext = weather
+        ? `${weather.temp}°C, ${weather.desc}, luftfuktighet ${weather.humidity}%, regn ${weather.rain}mm. Kommande dagar max ${weather.daily?.temperature_2m_max?.slice(0,3).join("/")}°C, regn ${weather.daily?.precipitation_sum?.slice(0,3).join("/")}mm`
+        : null;
+
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model:"claude-sonnet-4-20250514",
-          max_tokens:2000,
-          system:`Du är världens bästa botaniker, växtpatolog och odlingsexpert med 30 års erfarenhet av grönsaksodling i nordiskt klimat. Du är specialiserad på växthusodling, sjukdomsidentifiering och skördeoptimering.
-
-Analysera bilden MYCKET noggrant och svara ENBART med ett JSON-objekt. Inga backticks, ingen extra text, bara ren JSON.
-
-JSON-schema:
-{
-  "plant_name": "Växtnamn på svenska",
-  "variety_guess": "Möjlig sort baserat på utseende",
-  "emoji": "Emoji som passar växten",
-  "health_score": 0-100,
-  "status": "optimal|good|warning|critical",
-  "confidence": 0-100,
-  "diagnosis": "Detaljerad beskrivning av plantans nuvarande tillstånd och hälsa",
-  "growth_stage": "T.ex. groddplanta / vegetativ fas / blomning / fruktbildning / mognad",
-  "issues": ["Specifikt problem 1", "Specifikt problem 2"],
-  "urgent_actions": ["Åtgärd som måste göras IDAG eller inom 24h"],
-  "recommended_actions": ["Åtgärd 1 för bästa skörd", "Åtgärd 2", "Åtgärd 3"],
-  "pruning_needed": true/false,
-  "pruning_instructions": "Exakt instruktion om beskärning/tjuvskott behövs, annars tom sträng",
-  "leaves_to_remove": "Beskriv vilka blad som ska tas bort och varför, annars tom sträng",
-  "watering_assessment": "Bedömning av vattenbehov baserat på plantans utseende",
-  "nutrient_assessment": "Bedömning av näringsstatus baserat på bladfärg och tillväxt",
-  "harvest_readiness": "Bedömning om skörd är nära, och tips för optimal skördetid",
-  "pest_disease_risk": "Identifierade skadedjur, sjukdomar eller risker",
-  "care_tips": "3-5 konkreta tips för att maximera skörden för just denna art och detta stadium",
-  "next_week_tasks": ["Uppgift att göra inom en vecka 1", "Uppgift 2", "Uppgift 3"]
-}`,
-          messages:[{
-            role:"user",
-            content:[
-              { type:"image", source:{ type:"base64", media_type: mediaType, data: b64 } },
-              { type:"text", text:`Analysera denna växt ingående. ${weather?`Aktuellt väder i ${userLocation?.name||"Sverige"}: ${weather.temp}°C, ${weather.desc}, luftfuktighet ${weather.humidity}%, regn ${weather.rain}mm. Kommande dagar: max ${weather.daily?.temperature_2m_max?.slice(0,3).join("/")}°C, regn ${weather.daily?.precipitation_sum?.slice(0,3).join("/")}mm. Anpassa råden efter vädret.`:""} Titta extra noga på: 1) Behöver tjuvskott plockas? 2) Finns sjuka/döende blad? 3) Skadedjur/sjukdomar? 4) Näringsbrist? 5) Vattenstatus? 6) Hur nära skörd? 7) Påverkar kommande väder odlingen? Ge konkreta råd för nordisk odling. Svara BARA med JSON.` }
-            ]
-          }]
+          base64: b64,
+          mediaType,
+          weatherContext,
+          locationName: userLocation?.name || "Sverige"
         })
       });
 
       if(!res.ok) {
-        const errText = await res.text();
-        throw new Error(`API-fel ${res.status}: ${errText.slice(0,200)}`);
+        const errData = await res.json().catch(()=>({error:`HTTP ${res.status}`}));
+        throw new Error(errData.error || `Servern svarade med fel ${res.status}`);
       }
+
+      const parsed = await res.json();
+      if(parsed.error) throw new Error(parsed.error);
+
+      setResult(parsed);
+      setPhase("result");
+    } catch(e) {
+      setResult({
+        plant_name:"Analysfel",
+        variety_guess:"",
+        emoji:"⚠️",
+        health_score:0,
+        status:"warning",
+        diagnosis:`${e.message||"Okänt fel"}`,
+        issues:["Kunde inte analysera bilden"],
+        urgent_actions:[],
+        recommended_actions:["Försök igen med en tydlig bild i bra ljus","Kontrollera internetanslutningen"],
+        confidence:0,
+        care_tips:"",
+        next_week_tasks:[]
+      });
+      setPhase("result");
+    }
+  }
+
 
       const data = await res.json();
 
