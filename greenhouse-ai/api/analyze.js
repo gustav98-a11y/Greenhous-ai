@@ -2,7 +2,8 @@
 // Löser CORS-problemet och håller API-nyckeln säker
 
 const GEMINI_API_KEY = "AIzaSyC7bPCFtUoR23ShPRjQswgmEXb7rZ8JKfk";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+// gemini-2.0-flash-lite har högre gratiskvot (1500 req/dag, 15 req/min)
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
 
 export default async function handler(req, res) {
   // CORS headers
@@ -75,15 +76,25 @@ Svara ENBART med ett JSON-objekt, inga backticks, ingen extra text:
       }
     };
 
-    const geminiRes = await fetch(GEMINI_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(geminiBody)
-    });
+    // Retry up to 2 times on 429 rate limit
+    let geminiRes;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      geminiRes = await fetch(GEMINI_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(geminiBody)
+      });
+      if (geminiRes.status !== 429) break;
+      // Wait 2s before retry
+      await new Promise(r => setTimeout(r, 2000));
+    }
 
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
       console.error("Gemini error:", errText);
+      if (geminiRes.status === 429) {
+        return res.status(429).json({ error: "För många förfrågningar — vänta 1 minut och försök igen." });
+      }
       return res.status(502).json({ error: `Gemini API error ${geminiRes.status}`, detail: errText.slice(0, 200) });
     }
 
