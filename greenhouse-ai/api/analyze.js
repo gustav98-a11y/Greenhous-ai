@@ -42,18 +42,19 @@ Analysera bilden noggrant. Svara ENBART med JSON, inga backticks, ingen extra te
 }`;
 
     const GEMINI_KEY = "AIzaSyDKlvgH46UK8G9pzn4z4O6A8lM7WzaASQs";
-    const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
-    // Aktuella modeller med vision-stöd (2025)
-    const models = [
-      `${BASE}/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
-      `${BASE}/gemini-2.0-flash-lite:generateContent?key=${GEMINI_KEY}`,
-      `${BASE}/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+    // Prova v1 och v1beta med aktuella modellnamn
+    const endpoints = [
+      `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_KEY}`,
     ];
 
     let lastError = null;
 
-    for (const url of models) {
+    for (const url of endpoints) {
       try {
         const geminiRes = await fetch(url, {
           method: "POST",
@@ -70,8 +71,14 @@ Analysera bilden noggrant. Svara ENBART med JSON, inga backticks, ingen extra te
         });
 
         if (geminiRes.status === 429) {
-          lastError = "429";
-          await new Promise(r => setTimeout(r, 1500));
+          lastError = "rate_limit";
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+
+        if (geminiRes.status === 404) {
+          // Model not found — try next
+          lastError = "404";
           continue;
         }
 
@@ -102,11 +109,14 @@ Analysera bilden noggrant. Svara ENBART med JSON, inga backticks, ingen extra te
       }
     }
 
-    return res.status(502).json({
-      error: lastError?.includes("429")
-        ? "Gemini-kvoten tillfälligt slut — vänta 1 minut och försök igen."
-        : `Analysfel: ${lastError}`
-    });
+    // All endpoints failed — return helpful error
+    const msg = lastError === "rate_limit"
+      ? "Gemini-kvoten tillfälligt slut — vänta 1 minut och försök igen."
+      : lastError === "404"
+      ? "Gemini-modellen hittades inte — kontakta support."
+      : `Analysfel: ${lastError}`;
+
+    return res.status(502).json({ error: msg });
 
   } catch (err) {
     return res.status(500).json({ error: err.message || "Serverfel" });
