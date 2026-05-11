@@ -825,7 +825,7 @@ export default function App() {
       try { await sb.upsertPlant(auth.token,{...plant,user_id:auth.user.id,growth_log:plant.growthLog,harvest_log:plant.harvestLog,watering_log:plant.wateringLog}); }
       catch { toast_("Kunde inte spara till molnet","error"); }
     } else {
-      try { await window.storage.set("gh_plants",JSON.stringify(updated)); } catch {}
+      try { localStorage.setItem("gh_plants", JSON.stringify(updated)); } catch {}
     }
   }
 
@@ -837,7 +837,7 @@ export default function App() {
       try { await sb.upsertPlant(auth.token,{...plant,user_id:auth.user.id,growth_log:plant.growthLog,harvest_log:plant.harvestLog,watering_log:plant.wateringLog}); toast_("🌱 Planta sparad i molnet!","success"); }
       catch { toast_("Planta tillagd lokalt","info"); }
     } else {
-      try { await window.storage.set("gh_plants",JSON.stringify(updated)); } catch {}
+      try { localStorage.setItem("gh_plants", JSON.stringify(updated)); } catch {}
       toast_("🌱 Planta tillagd!","success");
     }
   }
@@ -845,7 +845,7 @@ export default function App() {
   async function deletePlantFn(id) {
     const updated=plants.filter(p=>p.id!==id); setPlants(updated);
     if(auth&&SUPABASE_READY) { try { await sb.deletePlant(auth.token,id); } catch {} }
-    else { try { await window.storage.set("gh_plants",JSON.stringify(updated)); } catch {} }
+    else { try { localStorage.setItem("gh_plants", JSON.stringify(updated)); } catch {} }
     setSelPlant(null); toast_("🗑 Planta borttagen","info");
   }
 
@@ -1369,8 +1369,7 @@ export default function App() {
                   toast_("📥 Data exporterad!","success");
                 }}>📥 JSON-backup</Btn>
                 <Btn style={{flex:1,textAlign:"center",fontSize:12,padding:"10px"}} onClick={()=>{
-                  const rows=["Planta,Sort,Status,Hälsa,Total skörd",...plants.map(p=>`${p.name},${p.variety||""},${p.status},${p.health}%,${p.totalHarvest||0}g`)].join("
-");
+                  const rows=["Planta,Sort,Status,Hälsa,Total skörd",...plants.map(p=>`${p.name},${p.variety||""},${p.status},${p.health}%,${p.totalHarvest||0}g`)].join("\n");
                   const blob=new Blob([rows],{type:"text/csv"}); const url=URL.createObjectURL(blob);
                   const a=document.createElement("a"); a.href=url; a.download=`greenhouse-${todayISO()}.csv`; a.click();
                   toast_("📊 CSV exporterad!","success");
