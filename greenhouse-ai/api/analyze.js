@@ -1,6 +1,3 @@
-// Vercel serverless proxy för bildanalys
-// Använder Anthropic API (samma som Claude-chatten i appen)
-
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -44,12 +41,14 @@ Analysera bilden noggrant. Svara ENBART med JSON, inga backticks, ingen extra te
   "next_week_tasks": ["Uppgift 1", "Uppgift 2"]
 }`;
 
-    // Prova Gemini först, fallback till gratis alternativ
     const GEMINI_KEY = "AIzaSyDKlvgH46UK8G9pzn4z4O6A8lM7WzaASQs";
+    const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+
+    // Aktuella modeller med vision-stöd (2025)
     const models = [
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${GEMINI_KEY}`,
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_KEY}`,
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key=${GEMINI_KEY}`,
+      `${BASE}/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+      `${BASE}/gemini-2.0-flash-lite:generateContent?key=${GEMINI_KEY}`,
+      `${BASE}/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
     ];
 
     let lastError = null;
@@ -72,14 +71,13 @@ Analysera bilden noggrant. Svara ENBART med JSON, inga backticks, ingen extra te
 
         if (geminiRes.status === 429) {
           lastError = "429";
-          // Small delay before trying next model
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, 1500));
           continue;
         }
 
         if (!geminiRes.ok) {
           const t = await geminiRes.text();
-          lastError = `${geminiRes.status}: ${t.slice(0,100)}`;
+          lastError = `${geminiRes.status}: ${t.slice(0,150)}`;
           continue;
         }
 
@@ -104,15 +102,13 @@ Analysera bilden noggrant. Svara ENBART med JSON, inga backticks, ingen extra te
       }
     }
 
-    // All models failed
-    return res.status(429).json({
-      error: lastError === "429"
-        ? "Gemini API-kvoten är tillfälligt slut. Vänta 1 minut och försök igen."
+    return res.status(502).json({
+      error: lastError?.includes("429")
+        ? "Gemini-kvoten tillfälligt slut — vänta 1 minut och försök igen."
         : `Analysfel: ${lastError}`
     });
 
   } catch (err) {
-    console.error("Proxy error:", err);
     return res.status(500).json({ error: err.message || "Serverfel" });
   }
 }
