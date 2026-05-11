@@ -77,12 +77,7 @@ const SUPABASE_READY = SUPABASE_URL !== "DIN_SUPABASE_URL" && SUPABASE_ANON_KEY 
 // ─────────────────────────────────────────────────────────────────────────────
 // DEMO-DATA (används utan Supabase)
 // ─────────────────────────────────────────────────────────────────────────────
-const DEMO_PLANTS = [
-  { id:1, name:"Tomat", variety:"Sungold F1", emoji:"🍅", location:"Växthus A", planted:"2024-04-10", health:92, water:68, temp:24, humidity:72, status:"optimal", alert:null, harvest:"15 aug", tasks:["Tjuva sidoskott","Kontrollera blomklasar"], nutrients:85, notes:"", sensorId:null, wateringLog:[], growthLog:[{date:"V1",height:12},{date:"V2",height:22},{date:"V3",height:38},{date:"V4",height:58},{date:"V5",height:80},{date:"V6",height:105}], harvestLog:[], totalHarvest:0, color:"#e8604c" },
-  { id:2, name:"Paprika", variety:"Californian Wonder", emoji:"🫑", location:"Växthus A", planted:"2024-04-05", health:78, water:45, temp:26, humidity:65, status:"warning", alert:"Låg fuktighet", harvest:"20 aug", tasks:["Vattna nu"], nutrients:70, notes:"", sensorId:null, wateringLog:[], growthLog:[{date:"V1",height:8},{date:"V2",height:15},{date:"V3",height:25},{date:"V4",height:35},{date:"V5",height:42},{date:"V6",height:50}], harvestLog:[], totalHarvest:0, color:"#f0a500" },
-  { id:3, name:"Gurka", variety:"Marketmore", emoji:"🥒", location:"Växthus B", planted:"2024-04-20", health:88, water:82, temp:23, humidity:80, status:"optimal", alert:null, harvest:"10 aug", tasks:["Binda upp rankor"], nutrients:90, notes:"", sensorId:null, wateringLog:[], growthLog:[{date:"V1",height:6},{date:"V2",height:18},{date:"V3",height:40},{date:"V4",height:70},{date:"V5",height:110},{date:"V6",height:145}], harvestLog:[{date:"2 aug",amount:2,unit:"st",weight:400},{date:"5 aug",amount:3,unit:"st",weight:600}], totalHarvest:1000, color:"#4caf50" },
-  { id:4, name:"Basilika", variety:"Genovese", emoji:"🌿", location:"Fönsterbräda", planted:"2024-05-01", health:65, water:30, temp:21, humidity:55, status:"critical", alert:"Håller på att blomma", harvest:"Löpande", tasks:["Vattna OMEDELBART","Klipp blomknoppar"], nutrients:55, notes:"", sensorId:null, wateringLog:[], growthLog:[{date:"V1",height:5},{date:"V2",height:10},{date:"V3",height:18},{date:"V4",height:22},{date:"V5",height:24},{date:"V6",height:23}], harvestLog:[{date:"1 aug",amount:1,unit:"knippe",weight:30}], totalHarvest:30, color:"#8bc34a" },
-];
+const DEMO_PLANTS = []; // Tom start — lägg till egna plantor
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -184,6 +179,79 @@ function GrowthChart({ data, color }) {
   );
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOCATION MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function LocationModal({ userLocation, onSave, onClose }) {
+  const [search,setSearch]=useState("");
+  const [results,setResults]=useState([]);
+  const [searching,setSearching]=useState(false);
+  const [manualLat,setManualLat]=useState(String(userLocation.lat));
+  const [manualLon,setManualLon]=useState(String(userLocation.lon));
+  const [manualName,setManualName]=useState(userLocation.name);
+
+  async function searchPlace() {
+    if(!search.trim()) return;
+    setSearching(true);
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(search)}&format=json&limit=5&accept-language=sv`);
+      const data = await res.json();
+      setResults(data.map(r=>({name:r.display_name.split(",").slice(0,2).join(", "),lat:parseFloat(r.lat),lon:parseFloat(r.lon)})));
+    } catch { setResults([]); }
+    setSearching(false);
+  }
+
+  function useGPS() {
+    if(!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(async pos=>{
+      const {latitude:lat,longitude:lon}=pos.coords;
+      try {
+        const res=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=sv`);
+        const d=await res.json();
+        const name=d.address?.city||d.address?.town||d.address?.village||"Min plats";
+        onSave({name,lat,lon});
+        onClose();
+      } catch { onSave({name:"Min plats",lat,lon}); onClose(); }
+    });
+  }
+
+  return (
+    <Modal title="📍 Välj din plats" onClose={onClose}>
+      <div style={{fontSize:13,color:"#6b7c72",marginBottom:14,lineHeight:1.5}}>
+        Din plats används för att hämta lokalt väder och ge mer exakta odlingsråd.
+      </div>
+
+      <Btn variant="primary" style={{width:"100%",marginBottom:14,textAlign:"center"}} onClick={useGPS}>
+        📍 Använd min nuvarande plats (GPS)
+      </Btn>
+
+      <div style={{fontSize:12,color:"#6b7c72",marginBottom:6,textAlign:"center"}}>— eller sök manuellt —</div>
+
+      <div style={{display:"flex",gap:8,marginBottom:8}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&searchPlace()} placeholder="Sök stad eller ort…" style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px 12px",color:"#e8f0eb",fontSize:14,outline:"none"}}/>
+        <Btn onClick={searchPlace} disabled={searching} style={{padding:"0 14px",fontSize:14}}>{searching?"…":"Sök"}</Btn>
+      </div>
+
+      {results.map((r,i)=>(
+        <button key={i} onClick={()=>{onSave(r);onClose();}} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px",marginBottom:6,cursor:"pointer",color:"#e8f0eb",textAlign:"left",fontSize:13}}>
+          📍 {r.name}
+        </button>
+      ))}
+
+      <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+        <div style={{fontSize:12,color:"#6b7c72",marginBottom:8}}>Eller ange koordinater manuellt</div>
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
+          <input value={manualLat} onChange={e=>setManualLat(e.target.value)} placeholder="Latitud (t.ex. 56.24)" style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"8px 10px",color:"#e8f0eb",fontSize:13,outline:"none"}}/>
+          <input value={manualLon} onChange={e=>setManualLon(e.target.value)} placeholder="Longitud (t.ex. 12.86)" style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"8px 10px",color:"#e8f0eb",fontSize:13,outline:"none"}}/>
+        </div>
+        <input value={manualName} onChange={e=>setManualName(e.target.value)} placeholder="Platsnamn" style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"8px 10px",color:"#e8f0eb",fontSize:13,outline:"none",marginBottom:8}}/>
+        <Btn style={{width:"100%",textAlign:"center"}} onClick={()=>{if(manualLat&&manualLon){onSave({name:manualName||"Min plats",lat:parseFloat(manualLat),lon:parseFloat(manualLon)});onClose();}}}>Spara koordinater</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -204,6 +272,7 @@ function AuthScreen({ onAuth, onSkip }) {
       const token = res.access_token;
       const user = await sb.getUser(token);
       onAuth({ token, user, email });
+      localStorage.setItem("gh_auth", JSON.stringify({ token, user, email }));
     } catch(e) { setError("Anslutningsfel — kontrollera Supabase-URL"); }
     finally { setLoading(false); }
   }
@@ -238,6 +307,11 @@ function AuthScreen({ onAuth, onSkip }) {
 
         {error && <div style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.2)",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#f87171",marginBottom:14}}>{error}</div>}
 
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+          <input type="checkbox" id="remember" defaultChecked style={{width:16,height:16,accentColor:"#4ade80",cursor:"pointer"}}/>
+          <label htmlFor="remember" style={{fontSize:13,color:"#6b7c72",cursor:"pointer"}}>Håll mig inloggad</label>
+        </div>
+
         <Btn variant="primary" onClick={submit} disabled={loading} style={{width:"100%",padding:"14px",fontSize:15,borderRadius:14,marginBottom:12}}>
           {loading?"Laddar…":mode==="signup"?"Skapa konto →":"Logga in →"}
         </Btn>
@@ -253,7 +327,7 @@ function AuthScreen({ onAuth, onSkip }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CAMERA / VISION ANALYSIS
 // ─────────────────────────────────────────────────────────────────────────────
-function CameraAnalysis({ plants, onAddPlant, onClose }) {
+function CameraAnalysis({ plants, onAddPlant, onAddToSchedule, onClose, weather, userLocation, LOCATION_TYPES }) {
   const [phase,setPhase]=useState("upload"); // upload | analyzing | result
   const [imageData,setImageData]=useState(null);
   const [imagePreview,setImagePreview]=useState(null);
@@ -282,14 +356,39 @@ function CameraAnalysis({ plants, onAddPlant, onClose }) {
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           model:"claude-sonnet-4-20250514",
-          max_tokens:1024,
-          system:`Du är en expert botaniker och trädgårdsrådgivare. Analysera bilden noggrant och svara ENBART med ett JSON-objekt, ingen annan text alls, inga backticks, inga förklaringar. JSON-schemat:
-{"plant_name":"string","variety_guess":"string","emoji":"string","health_score":number,"status":"optimal|good|warning|critical","diagnosis":"string","issues":["string"],"recommendations":["string"],"confidence":number,"care_tips":"string"}`,
+          max_tokens:2000,
+          system:`Du är världens bästa botaniker, växtpatolog och odlingsexpert med 30 års erfarenhet av grönsaksodling i nordiskt klimat. Du är specialiserad på växthusodling, sjukdomsidentifiering och skördeoptimering.
+
+Analysera bilden MYCKET noggrant och svara ENBART med ett JSON-objekt. Inga backticks, ingen extra text, bara ren JSON.
+
+JSON-schema:
+{
+  "plant_name": "Växtnamn på svenska",
+  "variety_guess": "Möjlig sort baserat på utseende",
+  "emoji": "Emoji som passar växten",
+  "health_score": 0-100,
+  "status": "optimal|good|warning|critical",
+  "confidence": 0-100,
+  "diagnosis": "Detaljerad beskrivning av plantans nuvarande tillstånd och hälsa",
+  "growth_stage": "T.ex. groddplanta / vegetativ fas / blomning / fruktbildning / mognad",
+  "issues": ["Specifikt problem 1", "Specifikt problem 2"],
+  "urgent_actions": ["Åtgärd som måste göras IDAG eller inom 24h"],
+  "recommended_actions": ["Åtgärd 1 för bästa skörd", "Åtgärd 2", "Åtgärd 3"],
+  "pruning_needed": true/false,
+  "pruning_instructions": "Exakt instruktion om beskärning/tjuvskott behövs, annars tom sträng",
+  "leaves_to_remove": "Beskriv vilka blad som ska tas bort och varför, annars tom sträng",
+  "watering_assessment": "Bedömning av vattenbehov baserat på plantans utseende",
+  "nutrient_assessment": "Bedömning av näringsstatus baserat på bladfärg och tillväxt",
+  "harvest_readiness": "Bedömning om skörd är nära, och tips för optimal skördetid",
+  "pest_disease_risk": "Identifierade skadedjur, sjukdomar eller risker",
+  "care_tips": "3-5 konkreta tips för att maximera skörden för just denna art och detta stadium",
+  "next_week_tasks": ["Uppgift att göra inom en vecka 1", "Uppgift 2", "Uppgift 3"]
+}`,
           messages:[{
             role:"user",
             content:[
               { type:"image", source:{ type:"base64", media_type: mediaType, data: b64 } },
-              { type:"text", text:"Identifiera växten på bilden och analysera hälsotillståndet. Svara bara med JSON, inget annat." }
+              { type:"text", text:`Analysera denna växt ingående. ${weather?`Aktuellt väder i ${userLocation?.name||"Sverige"}: ${weather.temp}°C, ${weather.desc}, luftfuktighet ${weather.humidity}%, regn ${weather.rain}mm. Kommande dagar: max ${weather.daily?.temperature_2m_max?.slice(0,3).join("/")}°C, regn ${weather.daily?.precipitation_sum?.slice(0,3).join("/")}mm. Anpassa råden efter vädret.`:""} Titta extra noga på: 1) Behöver tjuvskott plockas? 2) Finns sjuka/döende blad? 3) Skadedjur/sjukdomar? 4) Näringsbrist? 5) Vattenstatus? 6) Hur nära skörd? 7) Påverkar kommande väder odlingen? Ge konkreta råd för nordisk odling. Svara BARA med JSON.` }
             ]
           }]
         })
@@ -367,7 +466,8 @@ function CameraAnalysis({ plants, onAddPlant, onClose }) {
 
       {phase==="result"&&result&&(
         <div>
-          <div style={{display:"flex",gap:12,marginBottom:16}}>
+          {/* Header */}
+          <div style={{display:"flex",gap:12,marginBottom:14}}>
             {imagePreview&&<img src={imagePreview} alt="plant" style={{width:90,height:90,borderRadius:14,objectFit:"cover",border:"2px solid rgba(74,222,128,0.3)",flexShrink:0}}/>}
             <div style={{flex:1}}>
               <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4}}>
@@ -375,54 +475,144 @@ function CameraAnalysis({ plants, onAddPlant, onClose }) {
                 <div>
                   <div style={{fontWeight:700,fontSize:17}}>{result.plant_name}</div>
                   <div style={{fontSize:12,color:"#6b7c72"}}>{result.variety_guess}</div>
+                  {result.growth_stage&&<div style={{fontSize:11,color:"#4ade80",marginTop:2}}>📍 {result.growth_stage}</div>}
                 </div>
               </div>
-              <div style={{display:"inline-block",background:`${sColor(result.status)}22`,border:`1px solid ${sColor(result.status)}44`,color:sColor(result.status),borderRadius:20,padding:"2px 10px",fontSize:12}}>{sLabel(result.status)}</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
+                <div style={{background:`${sColor(result.status)}22`,border:`1px solid ${sColor(result.status)}44`,color:sColor(result.status),borderRadius:20,padding:"2px 10px",fontSize:12}}>{sLabel(result.status)}</div>
+                <div style={{background:"rgba(255,255,255,0.06)",borderRadius:20,padding:"2px 10px",fontSize:12,color:"#aaa"}}>{result.confidence}% säkerhet</div>
+              </div>
             </div>
             <Radial value={result.health_score||70} color={sColor(result.status)} size={52}/>
           </div>
 
-          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,padding:14,marginBottom:12}}>
-            <div style={{fontSize:12,color:"#6b7c72",marginBottom:6,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>AI-diagnos · {result.confidence}% säkerhet</div>
-            <div style={{fontSize:14,lineHeight:1.6}}>{result.diagnosis}</div>
+          {/* Diagnosis */}
+          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,padding:14,marginBottom:10}}>
+            <div style={{fontSize:12,color:"#6b7c72",marginBottom:6,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>🔬 Diagnos</div>
+            <div style={{fontSize:13,lineHeight:1.6}}>{result.diagnosis}</div>
           </div>
 
+          {/* URGENT actions — most important */}
+          {result.urgent_actions&&result.urgent_actions.length>0&&(
+            <div style={{background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.25)",borderRadius:14,padding:14,marginBottom:10}}>
+              <div style={{fontSize:12,color:"#f87171",fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:1}}>🚨 Gör detta nu</div>
+              {result.urgent_actions.map((a,i)=>(
+                <div key={i} style={{display:"flex",gap:10,marginBottom:6,fontSize:13,background:"rgba(248,113,113,0.06)",borderRadius:10,padding:"8px 12px"}}><span style={{color:"#f87171",fontWeight:700}}>!</span>{a}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Pruning */}
+          {result.pruning_needed&&result.pruning_instructions&&(
+            <div style={{background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:14,padding:14,marginBottom:10}}>
+              <div style={{fontSize:12,color:"#fbbf24",fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>✂️ Beskärning / Tjuvskott</div>
+              <div style={{fontSize:13,lineHeight:1.6}}>{result.pruning_instructions}</div>
+            </div>
+          )}
+
+          {/* Leaves to remove */}
+          {result.leaves_to_remove&&result.leaves_to_remove.length>2&&(
+            <div style={{background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.15)",borderRadius:14,padding:14,marginBottom:10}}>
+              <div style={{fontSize:12,color:"#fbbf24",fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>🍂 Blad att ta bort</div>
+              <div style={{fontSize:13,lineHeight:1.6}}>{result.leaves_to_remove}</div>
+            </div>
+          )}
+
+          {/* Issues */}
           {result.issues&&result.issues.length>0&&(
-            <div style={{background:"rgba(248,113,113,0.06)",border:"1px solid rgba(248,113,113,0.15)",borderRadius:14,padding:14,marginBottom:12}}>
-              <div style={{fontSize:12,color:"#f87171",fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:1}}>Identifierade problem</div>
+            <div style={{background:"rgba(248,113,113,0.06)",border:"1px solid rgba(248,113,113,0.15)",borderRadius:14,padding:14,marginBottom:10}}>
+              <div style={{fontSize:12,color:"#f87171",fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:1}}>⚠️ Identifierade problem</div>
               {result.issues.map((issue,i)=>(
-                <div key={i} style={{display:"flex",gap:8,marginBottom:6,fontSize:13}}><span style={{color:"#f87171"}}>·</span>{issue}</div>
+                <div key={i} style={{display:"flex",gap:8,marginBottom:5,fontSize:13}}><span style={{color:"#f87171"}}>·</span>{issue}</div>
               ))}
             </div>
           )}
 
-          {result.recommendations&&result.recommendations.length>0&&(
-            <div style={{background:"rgba(74,222,128,0.06)",border:"1px solid rgba(74,222,128,0.15)",borderRadius:14,padding:14,marginBottom:16}}>
-              <div style={{fontSize:12,color:"#4ade80",fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:1}}>Rekommenderade åtgärder</div>
-              {result.recommendations.map((r,i)=>(
-                <div key={i} style={{display:"flex",gap:10,marginBottom:8,fontSize:13,background:"rgba(74,222,128,0.05)",borderRadius:10,padding:"8px 12px"}}><span style={{color:"#4ade80",fontWeight:700,minWidth:16}}>{i+1}.</span>{r}</div>
+          {/* Watering + nutrients */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+            {result.watering_assessment&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:12,padding:12}}>
+              <div style={{fontSize:11,color:"#60a5fa",fontWeight:600,marginBottom:4}}>💧 VATTEN</div>
+              <div style={{fontSize:12,lineHeight:1.4}}>{result.watering_assessment}</div>
+            </div>}
+            {result.nutrient_assessment&&<div style={{background:"rgba(74,222,128,0.06)",border:"1px solid rgba(74,222,128,0.15)",borderRadius:12,padding:12}}>
+              <div style={{fontSize:11,color:"#4ade80",fontWeight:600,marginBottom:4}}>🧪 NÄRING</div>
+              <div style={{fontSize:12,lineHeight:1.4}}>{result.nutrient_assessment}</div>
+            </div>}
+          </div>
+
+          {/* Pest/disease */}
+          {result.pest_disease_risk&&result.pest_disease_risk.length>2&&(
+            <div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:12,marginBottom:10}}>
+              <div style={{fontSize:11,color:"#fbbf24",fontWeight:600,marginBottom:4}}>🐛 SKADEDJUR / SJUKDOMAR</div>
+              <div style={{fontSize:12,lineHeight:1.5}}>{result.pest_disease_risk}</div>
+            </div>
+          )}
+
+          {/* Harvest */}
+          {result.harvest_readiness&&result.harvest_readiness.length>2&&(
+            <div style={{background:"rgba(74,222,128,0.06)",border:"1px solid rgba(74,222,128,0.15)",borderRadius:12,padding:12,marginBottom:10}}>
+              <div style={{fontSize:11,color:"#4ade80",fontWeight:600,marginBottom:4}}>🌾 SKÖRD</div>
+              <div style={{fontSize:12,lineHeight:1.5}}>{result.harvest_readiness}</div>
+            </div>
+          )}
+
+          {/* Recommended actions */}
+          {result.recommended_actions&&result.recommended_actions.length>0&&(
+            <div style={{background:"rgba(74,222,128,0.06)",border:"1px solid rgba(74,222,128,0.15)",borderRadius:14,padding:14,marginBottom:10}}>
+              <div style={{fontSize:12,color:"#4ade80",fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:1}}>✅ Rekommenderade åtgärder</div>
+              {result.recommended_actions.map((r,i)=>(
+                <div key={i} style={{display:"flex",gap:10,marginBottom:7,fontSize:13,background:"rgba(74,222,128,0.05)",borderRadius:10,padding:"8px 12px"}}><span style={{color:"#4ade80",fontWeight:700,minWidth:16}}>{i+1}.</span>{r}</div>
               ))}
             </div>
           )}
 
+          {/* Next week tasks */}
+          {result.next_week_tasks&&result.next_week_tasks.length>0&&(
+            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:14,marginBottom:10}}>
+              <div style={{fontSize:12,color:"#aaa",fontWeight:600,marginBottom:8,textTransform:"uppercase",letterSpacing:1}}>📅 Kommande vecka</div>
+              {result.next_week_tasks.map((t,i)=>(
+                <div key={i} style={{display:"flex",gap:8,marginBottom:5,fontSize:13}}><span style={{color:"#6b7c72"}}>→</span>{t}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Care tips */}
           {result.care_tips&&(
-            <div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:12,marginBottom:16,fontSize:13,color:"#aaa",lineHeight:1.5}}>
+            <div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:12,marginBottom:14,fontSize:13,color:"#aaa",lineHeight:1.5}}>
               💡 {result.care_tips}
             </div>
           )}
 
+          {/* Add to schedule buttons */}
+          {onAddToSchedule&&result.plant_name&&(result.urgent_actions?.length>0||result.recommended_actions?.length>0)&&(
+            <div style={{background:"rgba(74,222,128,0.05)",border:"1px solid rgba(74,222,128,0.15)",borderRadius:14,padding:14,marginBottom:12}}>
+              <div style={{fontSize:12,color:"#4ade80",fontWeight:600,marginBottom:10}}>📅 Lägg åtgärder i schemat</div>
+              {[...(result.urgent_actions||[]).map(t=>({t,priority:"critical"})),...(result.recommended_actions||[]).map(t=>({t,priority:"medium"})),...(result.next_week_tasks||[]).map(t=>({t,priority:"low"}))].slice(0,8).map(({t,priority},i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,background:"rgba(255,255,255,0.04)",borderRadius:10,padding:"8px 12px"}}>
+                  <div style={{fontSize:12,flex:1,marginRight:8}}>{t}</div>
+                  <Btn style={{padding:"4px 10px",fontSize:11,flexShrink:0}} onClick={()=>onAddToSchedule({
+                    plantName:result.plant_name, emoji:result.emoji||"🌱",
+                    task:t, priority
+                  })}>+ Schema</Btn>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div style={{marginBottom:14}}>
-            <div style={{fontSize:12,color:"#6b7c72",marginBottom:8}}>Lägg till som ny planta eller spara analys på befintlig:</div>
+            <div style={{fontSize:12,color:"#6b7c72",marginBottom:8}}>Lägg till som ny planta med denna analys:</div>
             <div style={{display:"flex",gap:8}}>
               <Btn variant="primary" style={{flex:1,textAlign:"center"}} onClick={()=>{
+                const allTasks=[...(result.urgent_actions||[]),...(result.recommended_actions||[])];
                 onAddPlant({
                   name:result.plant_name, variety:result.variety_guess||"Okänd sort",
                   emoji:result.emoji||"🌱", location:"Okänd", planted:todayISO(),
                   health:result.health_score||75, water:60, temp:22, humidity:65,
                   status:result.status||"good", alert:result.issues?.[0]||null,
-                  harvest:"Okänt", tasks:result.recommendations||[], nutrients:70,
-                  notes:`AI-analys: ${result.diagnosis}`, sensorId:null,
-                  wateringLog:[], growthLog:[{date:"V1",height:10}],
+                  harvest:"Okänt", tasks:allTasks.slice(0,5), nutrients:70,
+                  photo: imagePreview||null,
+                  notes:`AI ${new Date().toLocaleDateString("sv-SE")}: ${result.diagnosis}`,
+                  sensorId:null, wateringLog:[], growthLog:[{date:"V1",height:10}],
                   harvestLog:[], totalHarvest:0, color:"#4ade80"
                 });
                 onClose();
@@ -513,10 +703,16 @@ function GrowthModal({ plant, onSave, onClose }) {
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [auth,setAuth]=useState(null); // { token, user, email } | null
-  const [demoMode,setDemoMode]=useState(false);
+  // Restore session from localStorage on first load
+  const savedAuth = (() => { try { const a=localStorage.getItem("gh_auth"); return a?JSON.parse(a):null; } catch{return null;} })();
+  const savedDemo = (() => { try { return localStorage.getItem("gh_demo")==="1"; } catch{return false;} })();
+
+  const [auth,setAuth]=useState(savedAuth);
+  const [demoMode,setDemoMode]=useState(savedDemo);
   const [tab,setTab]=useState("dashboard");
   const [plants,setPlants]=useState(DEMO_PLANTS);
+  const [scheduleTasks,setScheduleTasks]=useState([]); // {id,plantId,plantName,emoji,task,priority,date,done}
+  const [schedDone,setSchedDone]=useState({});         // {taskId: true}
   const [selPlant,setSelPlant]=useState(null);
   const [messages,setMessages]=useState([{role:"assistant",text:"Hej! 🌱 Jag är din AI-odlingsassistent. Jag kan hjälpa dig analysera bilder av dina plantor, följa deras tillväxt och ge råd. Vad kan jag hjälpa med?"}]);
   const [chatInput,setChatInput]=useState("");
@@ -524,14 +720,71 @@ export default function App() {
   const [toast,setToast]=useState(null);
   const [modal,setModal]=useState(null);
   const [loading,setLoading]=useState(false);
+  const [weather,setWeather]=useState(null); // live weather data
+  const [userLocation,setUserLocation]=useState(()=>{ try{const l=localStorage.getItem("gh_location");return l?JSON.parse(l):{name:"Ängelholm",lat:56.24,lon:12.86};}catch{return {name:"Ängelholm",lat:56.24,lon:12.86};} });
   const chatEndRef=useRef(null);
 
   const isLoggedIn = auth || demoMode;
+
+  // Location types for plants
+  const LOCATION_TYPES = [
+    {id:"greenhouse",label:"Växthus",emoji:"🏠",indoor:true,protected:true},
+    {id:"pallkrage",label:"Pallkrage utomhus",emoji:"🪴",indoor:false,protected:false},
+    {id:"balcony",label:"Balkong",emoji:"🏢",indoor:false,protected:true},
+    {id:"window",label:"Fönsterbräda",emoji:"🪟",indoor:true,protected:true},
+    {id:"garden",label:"Trädgård",emoji:"🌳",indoor:false,protected:false},
+    {id:"terrace",label:"Terass",emoji:"☀️",indoor:false,protected:false},
+    {id:"tunnel",label:"Plastunnel",emoji:"⛺",indoor:false,protected:true},
+    {id:"shed",label:"Kallförråd",emoji:"🏚️",indoor:true,protected:true},
+  ];
 
   // Load plants from Supabase on login
   useEffect(()=>{
     if(auth&&SUPABASE_READY) loadPlantsFromDB();
   },[auth]);
+
+  // Load schedule from localStorage
+  useEffect(()=>{
+    try {
+      const t=localStorage.getItem("gh_sched_tasks"); if(t) setScheduleTasks(JSON.parse(t));
+      const d=localStorage.getItem("gh_sched_done");  if(d) setSchedDone(JSON.parse(d));
+    } catch {}
+  },[]);
+
+  // Fetch live weather for user location
+  useEffect(()=>{
+    fetchWeather(userLocation.lat, userLocation.lon);
+  },[userLocation]);
+
+  async function fetchWeather(lat, lon) {
+    try {
+      const res = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,windspeed_10m,weathercode&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,et0_fao_evapotranspiration&timezone=Europe%2FStockholm&forecast_days=3`
+      );
+      const data = await res.json();
+      if(data.current) {
+        const wc = data.current.weathercode;
+        const wDesc = wc<=1?"Klart":wc<=3?"Molnigt":wc<=48?"Dimma":wc<=67?"Regn":wc<=77?"Snö":wc<=82?"Regnskurar":"Åska";
+        setWeather({
+          temp: data.current.temperature_2m,
+          humidity: data.current.relative_humidity_2m,
+          rain: data.current.precipitation,
+          wind: data.current.windspeed_10m,
+          desc: wDesc,
+          code: wc,
+          daily: data.daily,
+          fetchedAt: new Date().toLocaleTimeString("sv-SE",{hour:"2-digit",minute:"2-digit"}),
+        });
+      }
+    } catch(e) { console.warn("Weather fetch failed:", e); }
+  }
+
+  function saveUserLocation(loc) {
+    setUserLocation(loc);
+    localStorage.setItem("gh_location", JSON.stringify(loc));
+    fetchWeather(loc.lat, loc.lon);
+    toast_(`📍 Plats satt till ${loc.name}`, "success");
+  }
 
   async function loadPlantsFromDB() {
     try {
@@ -545,6 +798,26 @@ export default function App() {
 
   function toast_(msg,type="info"){ setToast({msg,type}); setTimeout(()=>setToast(null),3200); }
 
+  function addToSchedule(task) {
+    const newTask = { id: Date.now()+Math.random(), ...task, done: false, date: todayISO() };
+    const updated = [...scheduleTasks, newTask];
+    setScheduleTasks(updated);
+    try { localStorage.setItem("gh_sched_tasks", JSON.stringify(updated)); } catch {}
+    toast_("📅 Tillagd i schemat!", "success");
+  }
+
+  function toggleSchedDone(taskId) {
+    const updated = { ...schedDone, [taskId]: !schedDone[taskId] };
+    setSchedDone(updated);
+    try { localStorage.setItem("gh_sched_done", JSON.stringify(updated)); } catch {}
+  }
+
+  function removeSchedTask(taskId) {
+    const updated = scheduleTasks.filter(t => t.id !== taskId);
+    setScheduleTasks(updated);
+    try { localStorage.setItem("gh_sched_tasks", JSON.stringify(updated)); } catch {}
+  }
+
   async function savePlant(plant) {
     const updated = plants.map(p=>p.id===plant.id?plant:p);
     setPlants(updated);
@@ -552,7 +825,7 @@ export default function App() {
       try { await sb.upsertPlant(auth.token,{...plant,user_id:auth.user.id,growth_log:plant.growthLog,harvest_log:plant.harvestLog,watering_log:plant.wateringLog}); }
       catch { toast_("Kunde inte spara till molnet","error"); }
     } else {
-      try { localStorage.setItem("gh_plants", JSON.stringify(updated)); } catch {}
+      try { await window.storage.set("gh_plants",JSON.stringify(updated)); } catch {}
     }
   }
 
@@ -564,7 +837,7 @@ export default function App() {
       try { await sb.upsertPlant(auth.token,{...plant,user_id:auth.user.id,growth_log:plant.growthLog,harvest_log:plant.harvestLog,watering_log:plant.wateringLog}); toast_("🌱 Planta sparad i molnet!","success"); }
       catch { toast_("Planta tillagd lokalt","info"); }
     } else {
-      try { localStorage.setItem("gh_plants", JSON.stringify(updated)); } catch {}
+      try { await window.storage.set("gh_plants",JSON.stringify(updated)); } catch {}
       toast_("🌱 Planta tillagd!","success");
     }
   }
@@ -572,7 +845,7 @@ export default function App() {
   async function deletePlantFn(id) {
     const updated=plants.filter(p=>p.id!==id); setPlants(updated);
     if(auth&&SUPABASE_READY) { try { await sb.deletePlant(auth.token,id); } catch {} }
-    else { try { localStorage.setItem("gh_plants", JSON.stringify(updated)); } catch {} }
+    else { try { await window.storage.set("gh_plants",JSON.stringify(updated)); } catch {} }
     setSelPlant(null); toast_("🗑 Planta borttagen","info");
   }
 
@@ -601,8 +874,12 @@ export default function App() {
     const msg={role:"user",text:chatInput};
     const newMsgs=[...messages,msg]; setMessages(newMsgs); setChatInput(""); setIsTyping(true);
     try {
-      const ctx=plants.map(p=>`${p.name}(${p.variety||""}): hälsa ${p.health}%, vatten ${p.water||0}%, status ${p.status||"ok"}${p.alert?`, varning:${p.alert}`:""}, total skörd ${p.totalHarvest||0}g`).join("\n");
-      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:`Du är expert AI-odlingsassistent för nordiskt växthus. Svara alltid på svenska. Kort och praktisk.\nVäxter:\n${ctx}`,messages:newMsgs.map(m=>({role:m.role,content:m.text}))})});
+      const ctx=plants.map(p=>{
+        const locType=LOCATION_TYPES.find(l=>l.id===p.locationType);
+        return `${p.name}(${p.variety||""}): hälsa ${p.health}%, vatten ${p.water||0}%, status ${p.status||"ok"}${p.alert?`, varning:${p.alert}`:""}, plats:${locType?locType.label:p.location||"okänd"}(${locType?.indoor?"inomhus":"utomhus"})`;
+      }).join("\n");
+      const weatherCtx = weather ? `Aktuellt väder i ${userLocation.name}: ${weather.temp}°C, ${weather.desc}, luftfuktighet ${weather.humidity}%, regn ${weather.rain}mm, vind ${weather.wind}km/h. Kommande 3 dagar: max ${weather.daily?.temperature_2m_max?.slice(0,3).join("/")}°C, regn ${weather.daily?.precipitation_sum?.slice(0,3).join("/")}mm.` : "";
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:`Du är expert AI-odlingsassistent för nordisk odling. Svara alltid på svenska. Kort och praktisk.\nVäxter:\n${ctx}\n\n${weatherCtx}\n\nAnpassa alltid råd efter väder och om plantan är inomhus/utomhus/skyddad.`,messages:newMsgs.map(m=>({role:m.role,content:m.text}))})});
       const data=await res.json();
       const reply=data.content?.[0]?.text||"Kunde inte svara.";
       setMessages([...newMsgs,{role:"assistant",text:reply}]);
@@ -624,10 +901,27 @@ export default function App() {
         {/* Header */}
         <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:20,marginBottom:14}}>
           <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:16}}>
-            <div style={{width:60,height:60,borderRadius:16,background:`${plant.color||"#4ade80"}22`,border:`1px solid ${plant.color||"#4ade80"}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30}}>{plant.emoji}</div>
+            <div style={{position:"relative",width:70,height:70,flexShrink:0}}>
+          {plant.photo
+            ? <img src={plant.photo} alt={plant.name} style={{width:70,height:70,borderRadius:16,objectFit:"cover",border:`2px solid ${plant.color||"#4ade80"}44`}}/>
+            : <div style={{width:70,height:70,borderRadius:16,background:`${plant.color||"#4ade80"}22`,border:`1px solid ${plant.color||"#4ade80"}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:32}}>{plant.emoji}</div>
+          }
+          <label style={{position:"absolute",bottom:-4,right:-4,width:22,height:22,borderRadius:"50%",background:"#4ade80",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:11}}>
+            <input type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={async e=>{
+              if(!e.target.files[0]) return;
+              const {base64} = await prepareImage(e.target.files[0]);
+              const dataUrl = "data:image/jpeg;base64,"+base64;
+              savePlant({...plant, photo: dataUrl});
+            }}/>
+            📷
+          </label>
+        </div>
             <div style={{flex:1}}>
               <div style={{fontSize:20,fontWeight:700}}>{plant.name}</div>
-              <div style={{color:"#6b7c72",fontSize:13}}>{plant.variety} · {plant.location}</div>
+              <div style={{color:"#6b7c72",fontSize:13}}>{plant.variety}</div>
+              <div style={{fontSize:12,color:"#6b7c72",marginTop:2}}>
+                {(()=>{const lt=LOCATION_TYPES?.find?.(l=>l.id===plant.locationType);return lt?`${lt.emoji} ${lt.label}`:`📍 ${plant.location||"Okänd plats"}`;})()}
+              </div>
               <div style={{display:"inline-block",background:`${sColor(plant.status)}22`,border:`1px solid ${sColor(plant.status)}44`,color:sColor(plant.status),borderRadius:20,padding:"2px 10px",fontSize:12,marginTop:4}}>{sLabel(plant.status)}</div>
             </div>
             <Radial value={plant.health} color={sColor(plant.status)} size={52}/>
@@ -640,7 +934,7 @@ export default function App() {
             <Btn style={{textAlign:"center",padding:"8px"}} onClick={()=>setModal({type:"harvest",plant})}>🌾 Skörda</Btn>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <Btn variant="ghost" style={{textAlign:"center",padding:"8px"}} onClick={()=>setModal({type:"camera",plants,onAddPlant:addPlantFn})}>📷 Fotoanalys</Btn>
+            <Btn variant="ghost" style={{textAlign:"center",padding:"8px"}} onClick={()=>setModal({type:"camera",plants,onAddPlant:addPlantFn,onAddToSchedule:addToSchedule,weather,userLocation,LOCATION_TYPES})}>📷 Fotoanalys</Btn>
             <Btn variant="ghost" style={{textAlign:"center",padding:"8px"}} onClick={()=>{setTab("chat");setSelPlant(null);setChatInput(`Hur mår min ${plant.name}?`);}}>💬 Fråga AI</Btn>
           </div>
         </div>
@@ -708,7 +1002,7 @@ export default function App() {
   // ── ADD PLANT FORM ──────────────────────────────────────────────────────────
   function AddPlantModal() {
     const emojis=["🍅","🫑","🥒","🌿","🌶️","🫐","🥕","🫛","🌻","🍓","🥬","🧅","🌾","🍆","🫒"];
-    const [form,setForm]=useState({name:"",variety:"",emoji:"🌱",location:"Växthus A",planted:todayISO(),health:80,water:60,status:"optimal",harvest:"",nutrients:75,color:"#4ade80"});
+    const [form,setForm]=useState({name:"",variety:"",emoji:"🌱",location:"Växthus",locationType:"greenhouse",planted:todayISO(),health:80,water:60,status:"optimal",harvest:"",nutrients:75,color:"#4ade80"});
     return (
       <Modal title="Lägg till ny planta" onClose={()=>setModal(null)}>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
@@ -719,7 +1013,16 @@ export default function App() {
         {[["Växtnamn","name","text"],["Sort / Variant","variety","text"],["Placering","location","text"],["Planteringsdatum","planted","date"],["Förväntad skörd","harvest","text"]].map(([lbl,key,type])=>(
           <div key={key} style={{marginBottom:10}}>
             <div style={{fontSize:12,color:"#6b7c72",marginBottom:4}}>{lbl}</div>
-            <input value={form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} type={type} style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px 12px",color:"#e8f0eb",fontSize:14,outline:"none"}}/>
+            {key==="location"
+              ? <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  {(modal?.LOCATION_TYPES||[{id:"greenhouse",label:"Växthus",emoji:"🏠"},{id:"pallkrage",label:"Pallkrage",emoji:"🪴"},{id:"balcony",label:"Balkong",emoji:"🏢"},{id:"window",label:"Fönsterbräda",emoji:"🪟"},{id:"garden",label:"Trädgård",emoji:"🌳"},{id:"terrace",label:"Terass",emoji:"☀️"}]).map(lt=>(
+                    <button key={lt.id} onClick={()=>setForm(f=>({...f,location:lt.label,locationType:lt.id}))} style={{background:form.locationType===lt.id?"rgba(74,222,128,0.15)":"rgba(255,255,255,0.04)",border:`1px solid ${form.locationType===lt.id?"rgba(74,222,128,0.4)":"rgba(255,255,255,0.1)"}`,borderRadius:10,padding:"8px 6px",cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontSize:12,color:form.locationType===lt.id?"#4ade80":"#aaa"}}>
+                      <span style={{fontSize:16}}>{lt.emoji}</span>{lt.label}
+                    </button>
+                  ))}
+                </div>
+              : <input value={form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} type={type} style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px 12px",color:"#e8f0eb",fontSize:14,outline:"none"}}/>
+            }
           </div>
         ))}
         <div style={{marginBottom:14}}>
@@ -732,7 +1035,7 @@ export default function App() {
         </div>
         <Btn variant="primary" style={{width:"100%"}} onClick={()=>{
           if(!form.name)return toast_("Ange växtnamn","error");
-          addPlantFn({...form,tasks:[],sensorId:null,wateringLog:[],growthLog:[{date:"V1",height:10}],harvestLog:[],totalHarvest:0,notes:""});
+          addPlantFn({...form,tasks:[],sensorId:null,wateringLog:[],growthLog:[{date:"V1",height:10}],harvestLog:[],totalHarvest:0,notes:"",locationType:form.locationType||"greenhouse"});
           setModal(null);
         }}>+ Lägg till planta</Btn>
       </Modal>
@@ -740,11 +1043,11 @@ export default function App() {
   }
 
   if(!isLoggedIn) return (
-    <AuthScreen onAuth={(a)=>{ setAuth(a); setDemoMode(false); }} onSkip={()=>{ setDemoMode(true); setPlants(DEMO_PLANTS); }}/>
+    <AuthScreen onAuth={(a)=>{ setAuth(a); setDemoMode(false); }} onSkip={()=>{ setDemoMode(true); setPlants(DEMO_PLANTS); localStorage.setItem("gh_demo","1"); }}/>
   );
 
   const criticals=plants.filter(p=>p.status==="critical"||p.status==="warning");
-  const tabs=[{id:"dashboard",icon:"⊞",label:"Hem"},{id:"plants",icon:"🌱",label:"Växter"},{id:"camera",icon:"📷",label:"Kamera"},{id:"diagnose",icon:"🔬",label:"Diagnos"},{id:"chat",icon:"✦",label:"AI"},{id:"schedule",icon:"◷",label:"Schema"}];
+  const tabs=[{id:"dashboard",icon:"⊞",label:"Hem"},{id:"plants",icon:"🌱",label:"Växter"},{id:"camera",icon:"📷",label:"Kamera"},{id:"diagnose",icon:"🔬",label:"Diagnos"},{id:"chat",icon:"✦",label:"AI"},{id:"schedule",icon:"◷",label:"Schema"},{id:"account",icon:"👤",label:"Konto"}];
 
   return (
     <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:"#0a0f0d",minHeight:"100vh",color:"#e8f0eb",display:"flex",flexDirection:"column",maxWidth:430,margin:"0 auto",position:"relative",overflow:"hidden"}}>
@@ -753,6 +1056,7 @@ export default function App() {
       {toast&&<div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:toast.type==="success"?"rgba(74,222,128,0.15)":toast.type==="error"?"rgba(248,113,113,0.15)":"rgba(255,255,255,0.1)",border:`1px solid ${toast.type==="success"?"rgba(74,222,128,0.3)":toast.type==="error"?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.15)"}`,borderRadius:20,padding:"10px 20px",fontSize:14,zIndex:2000,color:"#e8f0eb",backdropFilter:"blur(10px)",whiteSpace:"nowrap",maxWidth:"90%"}}>{toast.msg}</div>}
 
       {modal?.type==="addPlant"&&<AddPlantModal/>}
+      {modal?.type==="location"&&<LocationModal userLocation={userLocation} onSave={saveUserLocation} onClose={()=>setModal(null)}/>}
       {modal?.type==="camera"&&<CameraAnalysis plants={plants} onAddPlant={addPlantFn} onClose={()=>setModal(null)}/>}
       {modal?.type==="harvest"&&<HarvestModal plant={modal.plant} onSave={(log)=>addHarvestLog(modal.plant.id,log)} onClose={()=>setModal(null)}/>}
       {modal?.type==="growth"&&<GrowthModal plant={modal.plant} onSave={(log)=>addGrowthLog(modal.plant.id,log)} onClose={()=>setModal(null)}/>}
@@ -770,7 +1074,7 @@ export default function App() {
             {demoMode&&<div style={{background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:20,padding:"3px 10px",fontSize:11,color:"#fbbf24"}}>DEMO</div>}
             {auth&&<div style={{background:"rgba(74,222,128,0.1)",border:"1px solid rgba(74,222,128,0.2)",borderRadius:20,padding:"3px 10px",fontSize:11,color:"#4ade80"}}>☁️ Inloggad</div>}
             {criticals.length>0&&<div style={{background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:20,padding:"4px 10px",fontSize:12,color:"#f87171",display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:"50%",background:"#f87171",display:"inline-block"}}/>{criticals.length}</div>}
-            {auth&&<button onClick={async()=>{if(SUPABASE_READY)await sb.signOut(auth.token);setAuth(null);setDemoMode(false);}} style={{background:"rgba(255,255,255,0.06)",border:"none",color:"#6b7c72",borderRadius:"50%",width:30,height:30,cursor:"pointer",fontSize:14}}>⏏</button>}
+            
           </div>
         </div>
       </div>
@@ -781,6 +1085,54 @@ export default function App() {
         {/* ── DASHBOARD ── */}
         {tab==="dashboard"&&(
           <div>
+            {/* Weather widget */}
+            {weather&&(
+              <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:16,padding:"14px 16px",marginBottom:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontSize:12,color:"#60a5fa",fontWeight:600,letterSpacing:1,textTransform:"uppercase"}}>🌤 Väder — {userLocation.name}</div>
+                  <button onClick={()=>setModal({type:"location"})} style={{background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:20,padding:"3px 10px",fontSize:11,color:"#60a5fa",cursor:"pointer"}}>Byt plats</button>
+                </div>
+                <div style={{display:"flex",gap:12,marginBottom:8}}>
+                  <div style={{fontSize:28,fontWeight:700}}>{weather.temp}°C</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:14,fontWeight:600}}>{weather.desc}</div>
+                    <div style={{fontSize:12,color:"#6b7c72"}}>💧{weather.humidity}% · 🌧{weather.rain}mm · 💨{weather.wind}km/h</div>
+                  </div>
+                </div>
+                {weather.daily&&(
+                  <div style={{display:"flex",gap:6}}>
+                    {["Idag","Imorgon","Överm"].map((d,i)=>(
+                      <div key={d} style={{flex:1,background:"rgba(255,255,255,0.05)",borderRadius:10,padding:"8px",textAlign:"center"}}>
+                        <div style={{fontSize:10,color:"#6b7c72",marginBottom:3}}>{d}</div>
+                        <div style={{fontSize:12,fontWeight:600}}>{weather.daily.temperature_2m_max[i]}°</div>
+                        <div style={{fontSize:11,color:"#60a5fa"}}>{weather.daily.precipitation_sum[i]}mm</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Weather warnings for outdoor plants */}
+                {(()=>{
+                  const outdoorPlants=plants.filter(p=>{const l=LOCATION_TYPES.find(x=>x.id===p.locationType);return l&&!l.protected;});
+                  const warnings=[];
+                  if(weather.temp<2) warnings.push(`❄️ Frostfara! ${outdoorPlants.length} utomhusplantor i riskzonen`);
+                  if(weather.temp>30) warnings.push(`🌡️ Extrem värme — öka bevattning för utomhusplantor`);
+                  if(weather.daily?.precipitation_sum?.[0]>10) warnings.push(`🌧️ Kraftigt regn idag — minska bevattning`);
+                  if(weather.wind>40) warnings.push(`💨 Stark vind — skydda känsliga plantor`);
+                  return warnings.length>0?(
+                    <div style={{marginTop:10,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:10,padding:"8px 12px"}}>
+                      {warnings.map((w,i)=><div key={i} style={{fontSize:12,color:"#fbbf24",marginBottom:i<warnings.length-1?4:0}}>{w}</div>)}
+                    </div>
+                  ):null;
+                })()}
+              </div>
+            )}
+
+            {!weather&&(
+              <button onClick={()=>setModal({type:"location"})} style={{width:"100%",background:"rgba(96,165,250,0.06)",border:"1px dashed rgba(96,165,250,0.2)",borderRadius:14,padding:"12px",marginBottom:14,fontSize:13,color:"#60a5fa",cursor:"pointer"}}>
+                📍 Sätt din plats för väderdata
+              </button>
+            )}
+
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:18}}>
               {[{l:"Växter",v:plants.length,i:"🌱",c:"#4ade80"},{l:"Optimala",v:plants.filter(p=>p.status==="optimal").length,i:"✓",c:"#4ade80"},{l:"Varningar",v:criticals.length,i:"⚠",c:"#fbbf24"}].map(s=>(
                 <div key={s.l} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"14px 12px",textAlign:"center"}}>
@@ -822,16 +1174,31 @@ export default function App() {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <div style={{fontSize:12,color:"#4ade80",letterSpacing:1.5,textTransform:"uppercase",fontWeight:600}}>Alla plantor</div>
               <div style={{display:"flex",gap:8}}>
-                <Btn onClick={()=>setModal({type:"camera",plants,onAddPlant:addPlantFn})} style={{padding:"6px 12px",fontSize:12}}>📷 Fota</Btn>
-                <Btn variant="primary" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setModal({type:"addPlant"})}>+ Ny</Btn>
+                <Btn onClick={()=>setModal({type:"camera",plants,onAddPlant:addPlantFn,onAddToSchedule:addToSchedule,weather,userLocation,LOCATION_TYPES})} style={{padding:"6px 12px",fontSize:12}}>📷 Fota</Btn>
+                <Btn variant="primary" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setModal({type:"addPlant",LOCATION_TYPES})}>+ Ny</Btn>
               </div>
             </div>
+
+            {plants.length===0&&(
+              <div style={{textAlign:"center",padding:"40px 20px",background:"rgba(74,222,128,0.04)",border:"1px dashed rgba(74,222,128,0.2)",borderRadius:20,marginBottom:16}}>
+                <div style={{fontSize:48,marginBottom:12}}>🌱</div>
+                <div style={{fontSize:17,fontWeight:700,marginBottom:8}}>Inga plantor än</div>
+                <div style={{fontSize:13,color:"#6b7c72",lineHeight:1.6,marginBottom:20}}>Lägg till din första planta manuellt eller fota en växt så identifierar AI:n den automatiskt.</div>
+                <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+                  <Btn variant="primary" onClick={()=>setModal({type:"camera",plants,onAddPlant:addPlantFn,onAddToSchedule:addToSchedule,weather,userLocation,LOCATION_TYPES})}>📷 Fota en växt</Btn>
+                  <Btn onClick={()=>setModal({type:"addPlant",LOCATION_TYPES})}>+ Lägg till manuellt</Btn>
+                </div>
+              </div>
+            )}
 
             {plants.map(p=>(
               <div key={p.id} onClick={()=>{setSelPlant(p.id);setTab("plants");}} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderLeft:`3px solid ${sColor(p.status)}`,borderRadius:16,padding:16,marginBottom:12,cursor:"pointer"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
                   <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                    <div style={{width:44,height:44,borderRadius:12,background:"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{p.emoji}</div>
+                    {p.photo
+                      ? <img src={p.photo} alt={p.name} style={{width:44,height:44,borderRadius:12,objectFit:"cover",border:"1px solid rgba(255,255,255,0.1)"}}/>
+                      : <div style={{width:44,height:44,borderRadius:12,background:"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{p.emoji}</div>
+                    }
                     <div>
                       <div style={{fontWeight:700,fontSize:16}}>{p.name}</div>
                       <div style={{fontSize:12,color:"#6b7c72"}}>{p.variety} · {p.location}</div>
@@ -856,14 +1223,17 @@ export default function App() {
             : (
               <div>
                 <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginBottom:14}}>
-                  <Btn onClick={()=>setModal({type:"camera",plants,onAddPlant:addPlantFn})} style={{padding:"8px 14px",fontSize:13}}>📷 Fotoanalys</Btn>
-                  <Btn variant="primary" onClick={()=>setModal({type:"addPlant"})}>+ Ny planta</Btn>
+                  <Btn onClick={()=>setModal({type:"camera",plants,onAddPlant:addPlantFn,onAddToSchedule:addToSchedule,weather,userLocation,LOCATION_TYPES})} style={{padding:"8px 14px",fontSize:13}}>📷 Fotoanalys</Btn>
+                  <Btn variant="primary" onClick={()=>setModal({type:"addPlant",LOCATION_TYPES})}>+ Ny planta</Btn>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   {plants.map(p=>(
                     <div key={p.id} onClick={()=>setSelPlant(p.id)} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:16,cursor:"pointer",position:"relative",overflow:"hidden"}}>
                       <div style={{position:"absolute",top:0,right:0,width:60,height:60,borderRadius:"0 18px 0 60px",background:`${sColor(p.status)}11`}}/>
-                      <div style={{fontSize:28,marginBottom:6}}>{p.emoji}</div>
+                      {p.photo
+                        ? <img src={p.photo} alt={p.name} style={{width:60,height:60,borderRadius:12,objectFit:"cover",marginBottom:6,border:`2px solid ${sColor(p.status)}33`}}/>
+                        : <div style={{fontSize:28,marginBottom:6}}>{p.emoji}</div>
+                      }
                       <div style={{fontWeight:700,fontSize:15}}>{p.name}</div>
                       <div style={{fontSize:12,color:"#6b7c72",marginBottom:8}}>{p.variety}</div>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -874,7 +1244,7 @@ export default function App() {
                       {p.alert&&<div style={{fontSize:11,color:"#f87171",marginTop:4}}>⚠ {p.alert}</div>}
                     </div>
                   ))}
-                  <div onClick={()=>setModal({type:"addPlant"})} style={{background:"rgba(74,222,128,0.04)",border:"1px dashed rgba(74,222,128,0.2)",borderRadius:18,padding:16,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,minHeight:140}}>
+                  <div onClick={()=>setModal({type:"addPlant",LOCATION_TYPES})} style={{background:"rgba(74,222,128,0.04)",border:"1px dashed rgba(74,222,128,0.2)",borderRadius:18,padding:16,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,minHeight:140}}>
                     <div style={{fontSize:28,color:"#4ade80"}}>+</div>
                     <div style={{fontSize:13,color:"#4ade80"}}>Ny planta</div>
                   </div>
@@ -890,7 +1260,7 @@ export default function App() {
               <div style={{fontSize:48,marginBottom:12}}>📷</div>
               <div style={{fontSize:18,fontWeight:700,marginBottom:8}}>AI-kameraanalys</div>
               <div style={{fontSize:14,color:"#6b7c72",lineHeight:1.6,marginBottom:20}}>Fota en växt — Claude Vision identifierar automatiskt vilken växt det är, analyserar hälsan och ger rekommendationer.</div>
-              <Btn variant="primary" style={{width:"100%",padding:"14px",fontSize:15}} onClick={()=>setModal({type:"camera",plants,onAddPlant:addPlantFn})}>
+              <Btn variant="primary" style={{width:"100%",padding:"14px",fontSize:15}} onClick={()=>setModal({type:"camera",plants,onAddPlant:addPlantFn,onAddToSchedule:addToSchedule,weather,userLocation,LOCATION_TYPES})}>
                 📷 Öppna kamera
               </Btn>
             </div>
@@ -909,7 +1279,7 @@ export default function App() {
 
         {/* ── DIAGNOSE ── */}
         {tab==="diagnose"&&(
-          <DiagnoseTab onOpenCamera={()=>setModal({type:"camera",plants,onAddPlant:addPlantFn})} onOpenChat={(q)=>{setTab("chat");setChatInput(q);}}/>
+          <DiagnoseTab onOpenCamera={()=>setModal({type:"camera",plants,onAddPlant:addPlantFn,onAddToSchedule:addToSchedule,weather,userLocation,LOCATION_TYPES})} onOpenChat={(q)=>{setTab("chat");setChatInput(q);}}/>
         )}
 
         {/* ── CHAT ── */}
@@ -941,7 +1311,104 @@ export default function App() {
 
         {/* ── SCHEDULE ── */}
         {tab==="schedule"&&(
-          <ScheduleTab plants={plants} waterPlant={waterPlant}/>
+          <ScheduleTab plants={plants} waterPlant={waterPlant} scheduleTasks={scheduleTasks} schedDone={schedDone} toggleSchedDone={toggleSchedDone} removeSchedTask={removeSchedTask}/>
+        )}
+
+        {/* ── ACCOUNT ── */}
+        {tab==="account"&&(
+          <div>
+            {/* Profile card */}
+            <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:24,marginBottom:16,textAlign:"center"}}>
+              <div style={{width:72,height:72,borderRadius:"50%",background:"linear-gradient(135deg,#1a3a22,#2d5a35)",border:"2px solid rgba(74,222,128,0.3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,margin:"0 auto 12px"}}>🌿</div>
+              {auth&&<>
+                <div style={{fontWeight:700,fontSize:18,marginBottom:4}}>{auth.email}</div>
+                <div style={{fontSize:12,color:"#4ade80"}}>☁️ Ansluten till Supabase</div>
+              </>}
+              {demoMode&&<>
+                <div style={{fontWeight:700,fontSize:18,marginBottom:4}}>Demo-läge</div>
+                <div style={{fontSize:12,color:"#fbbf24"}}>Data sparas bara lokalt</div>
+              </>}
+            </div>
+
+            {/* Stats */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
+              {[
+                {icon:"🌱",label:"Plantor",value:plants.length},
+                {icon:"🌾",label:"Skördar",value:plants.reduce((s,p)=>(s+(p.harvestLog?.length||0)),0)},
+                {icon:"💧",label:"Vattningar",value:plants.reduce((s,p)=>(s+(p.wateringLog?.length||0)),0)},
+              ].map(s=>(
+                <div key={s.label} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"14px 10px",textAlign:"center"}}>
+                  <div style={{fontSize:22}}>{s.icon}</div>
+                  <div style={{fontSize:22,fontWeight:700,color:"#4ade80",marginTop:4}}>{s.value}</div>
+                  <div style={{fontSize:11,color:"#6b7c72",marginTop:2}}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Location */}
+            <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:16,padding:16,marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:2}}>📍 Din plats</div>
+                  <div style={{fontSize:13,color:"#60a5fa"}}>{userLocation.name}</div>
+                  <div style={{fontSize:11,color:"#6b7c72",marginTop:2}}>{userLocation.lat.toFixed(3)}, {userLocation.lon.toFixed(3)}</div>
+                </div>
+                <Btn onClick={()=>setModal({type:"location"})} style={{padding:"8px 14px",fontSize:13}}>Ändra</Btn>
+              </div>
+            </div>
+
+            {/* Export */}
+            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:16,marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>💾 Exportera din data</div>
+              <div style={{display:"flex",gap:8}}>
+                <Btn style={{flex:1,textAlign:"center",fontSize:12,padding:"10px"}} onClick={()=>{
+                  const data=JSON.stringify({plants,scheduleTasks,exportedAt:new Date().toISOString()},null,2);
+                  const blob=new Blob([data],{type:"application/json"});
+                  const url=URL.createObjectURL(blob); const a=document.createElement("a");
+                  a.href=url; a.download=`greenhouse-${todayISO()}.json`; a.click();
+                  toast_("📥 Data exporterad!","success");
+                }}>📥 JSON-backup</Btn>
+                <Btn style={{flex:1,textAlign:"center",fontSize:12,padding:"10px"}} onClick={()=>{
+                  const rows=["Planta,Sort,Status,Hälsa,Total skörd",...plants.map(p=>`${p.name},${p.variety||""},${p.status},${p.health}%,${p.totalHarvest||0}g`)].join("
+");
+                  const blob=new Blob([rows],{type:"text/csv"}); const url=URL.createObjectURL(blob);
+                  const a=document.createElement("a"); a.href=url; a.download=`greenhouse-${todayISO()}.csv`; a.click();
+                  toast_("📊 CSV exporterad!","success");
+                }}>📊 CSV</Btn>
+              </div>
+            </div>
+
+            {/* App info */}
+            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:16,marginBottom:16}}>
+              <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>ℹ️ Om appen</div>
+              {[
+                ["Version","1.0.0"],
+                ["AI-modell","Claude Sonnet 4"],
+                ["Väderdata","Open-Meteo (gratis)"],
+                ["Backend","Supabase"],
+              ].map(([k,v])=>(
+                <div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:6}}>
+                  <span style={{color:"#6b7c72"}}>{k}</span>
+                  <span style={{color:"#aaa"}}>{v}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* LOGOUT — tucked away at the bottom */}
+            <div style={{background:"rgba(248,113,113,0.04)",border:"1px solid rgba(248,113,113,0.12)",borderRadius:16,padding:16}}>
+              <div style={{fontSize:13,fontWeight:600,color:"#f87171",marginBottom:6}}>Logga ut</div>
+              <div style={{fontSize:12,color:"#6b7c72",marginBottom:14,lineHeight:1.5}}>Din data sparas i molnet och finns kvar när du loggar in igen.</div>
+              <Btn variant="danger" style={{width:"100%",textAlign:"center"}} onClick={async()=>{
+                if(!window.confirm("Vill du verkligen logga ut?")) return;
+                if(auth&&SUPABASE_READY) await sb.signOut(auth.token);
+                setAuth(null); setDemoMode(false);
+                localStorage.removeItem("gh_auth"); localStorage.removeItem("gh_demo");
+                toast_("👋 Utloggad","info");
+              }}>
+                Logga ut från Greenhouse AI
+              </Btn>
+            </div>
+          </div>
         )}
       </div>
 
@@ -1033,60 +1500,147 @@ function DiagnoseTab({ onOpenCamera, onOpenChat }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEDULE TAB
 // ─────────────────────────────────────────────────────────────────────────────
-function ScheduleTab({ plants, waterPlant }) {
-  const [done,setDone]=useState({});
-  const dayTasks=[
-    [{plant:"Basilika",emoji:"🌿",task:"Vattna omedelbart",priority:"critical",pid:4},{plant:"Paprika",emoji:"🫑",task:"Vattna",priority:"high",pid:2},{plant:"Tomat",emoji:"🍅",task:"Tjuva sidoskott",priority:"medium",pid:1},{plant:"Gurka",emoji:"🥒",task:"Binda rankor",priority:"low",pid:3}],
-    [{plant:"Tomat",emoji:"🍅",task:"Kontrollera blomklasar",priority:"medium",pid:1},{plant:"Paprika",emoji:"🫑",task:"Kontrollera bladlöss",priority:"medium",pid:2}],
-    [{plant:"Tomat",emoji:"🍅",task:"Gödsla Kalimagnesia",priority:"medium",pid:1},{plant:"Gurka",emoji:"🥒",task:"Vattna",priority:"high",pid:3}],
-  ];
+// Priority score: lower = more urgent (sort ascending)
+function calcPriorityScore(task, plants) {
+  const priorityBase = {critical:0, high:25, medium:50, low:75}[task.priority] ?? 50;
+  // Boost if plant is in critical/warning state
+  const plant = plants.find(p=>p.id===task.plantId||p.name===task.plantName);
+  const plantPenalty = plant ? ({critical:-20,warning:-10,good:0,optimal:5}[plant.status]??0) : 0;
+  // Boost urgent keywords
+  const taskText = (task.task||"").toLowerCase();
+  const keywordBoost =
+    taskText.includes("omedelbart")||taskText.includes("nu ")||taskText.includes("akut") ? -15 :
+    taskText.includes("tjuvskott")||taskText.includes("tjuva") ? -8 :
+    taskText.includes("sjukdom")||taskText.includes("bladlöss")||taskText.includes("svamp") ? -8 :
+    taskText.includes("vattna") ? -5 :
+    taskText.includes("beskär")||taskText.includes("ta bort blad") ? -3 : 0;
+  // Lower health = higher priority
+  const healthBoost = plant ? Math.round((100-(plant.health||80))/10)*(-1) : 0;
+  return priorityBase + plantPenalty + keywordBoost + healthBoost;
+}
+
+function ScheduleTab({ plants, waterPlant, scheduleTasks, schedDone, toggleSchedDone, removeSchedTask }) {
   const pc={critical:"#f87171",high:"#fbbf24",medium:"#4ade80",low:"#6b7c72"};
+  const today=todayISO();
+
+  // Sort active tasks by computed priority score
+  const activeTasks = scheduleTasks
+    .filter(t=>!schedDone[t.id])
+    .map(t=>({...t, _score: calcPriorityScore(t, plants)}))
+    .sort((a,b)=>a._score-b._score);
+
+  const doneTasks = scheduleTasks.filter(t=>schedDone[t.id]);
+
+  // Auto-generated watering tasks from plants that need water
+  const wateringNeeded = plants.filter(p=>p.water<40||(p.nextWater&&p.nextWater.toLowerCase().includes("nu")));
 
   function exportJSON() {
-    const data=JSON.stringify({plants,exportedAt:new Date().toISOString()},null,2);
+    const data=JSON.stringify({plants,scheduleTasks,exportedAt:new Date().toISOString()},null,2);
     const blob=new Blob([data],{type:"application/json"});
     const url=URL.createObjectURL(blob);
-    const a=document.createElement("a"); a.href=url; a.download=`greenhouse-${todayISO()}.json`; a.click();
+    const a=document.createElement("a"); a.href=url; a.download=`greenhouse-${today}.json`; a.click();
   }
   function exportCSV() {
     const rows=["Planta,Sort,Status,Hälsa,Vatten,Total skörd,Senaste mätning",...plants.map(p=>`${p.name},${p.variety||""},${p.status},${p.health}%,${p.water||0}%,${p.totalHarvest||0}g,${p.growthLog?.slice(-1)[0]?.height||"-"}cm`)].join("\n");
     const blob=new Blob([rows],{type:"text/csv"}); const url=URL.createObjectURL(blob);
-    const a=document.createElement("a"); a.href=url; a.download=`greenhouse-plants-${todayISO()}.csv`; a.click();
+    const a=document.createElement("a"); a.href=url; a.download=`greenhouse-plants-${today}.csv`; a.click();
   }
 
   return (
     <div>
-      {["Idag","Imorgon","Övermorgon"].map((day,di)=>(
-        <div key={day} style={{marginBottom:20}}>
-          <div style={{fontSize:13,fontWeight:700,color:di===0?"#4ade80":"#6b7c72",marginBottom:10,textTransform:"uppercase",letterSpacing:1.5}}>{day}</div>
-          {dayTasks[di].map((t,i)=>{
-            const key=`s-${di}-${i}`,isDone=done[key];
-            return (
-              <div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderLeft:`3px solid ${pc[t.priority]}`,borderRadius:12,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:12,opacity:isDone?0.5:1}}>
-                <span style={{fontSize:20}}>{t.emoji}</span>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:14,fontWeight:500,textDecoration:isDone?"line-through":"none"}}>{t.task}</div>
-                  <div style={{fontSize:12,color:"#6b7c72",marginTop:2}}>{t.plant}</div>
-                </div>
-                <div style={{display:"flex",gap:6}}>
-                  {t.task.toLowerCase().includes("vattna")&&!isDone&&(
-                    <Btn style={{padding:"4px 10px",fontSize:11}} onClick={()=>{const p=plants.find(x=>x.id===t.pid);if(p)waterPlant(p.id);const u={...done,[key]:true};setDone(u);}}>💧</Btn>
-                  )}
-                  <button onClick={()=>setDone(d=>({...d,[key]:!d[key]}))} style={{width:24,height:24,borderRadius:7,border:`1.5px solid ${isDone?"#4ade80":pc[t.priority]}`,background:isDone?"rgba(74,222,128,0.2)":"transparent",cursor:"pointer",fontSize:13,color:"#4ade80",display:"flex",alignItems:"center",justifyContent:"center"}}>{isDone?"✓":""}</button>
+      {/* Watering alerts */}
+      {wateringNeeded.length>0&&(
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#f87171",marginBottom:10,textTransform:"uppercase",letterSpacing:1.5}}>🚨 Behöver vatten nu</div>
+          {wateringNeeded.map(p=>(
+            <div key={p.id} style={{background:"rgba(248,113,113,0.06)",border:"1px solid rgba(248,113,113,0.2)",borderLeft:"3px solid #f87171",borderRadius:12,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+              <span style={{fontSize:20}}>{p.emoji}</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:14,fontWeight:500}}>{p.name}</div>
+                <div style={{fontSize:12,color:"#f87171"}}>Vattennivå: {p.water||0}%</div>
+              </div>
+              <Btn style={{padding:"6px 12px",fontSize:12}} onClick={()=>waterPlant(p.id)}>💧 Vattna</Btn>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Active tasks from AI */}
+      <div style={{marginBottom:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#4ade80",textTransform:"uppercase",letterSpacing:1.5}}>Aktiva uppgifter ({activeTasks.length})</div>
+          {doneTasks.length>0&&<div style={{fontSize:12,color:"#6b7c72"}}>{doneTasks.length} klara · sorterat efter prioritet</div>}
+        </div>
+
+        {activeTasks.length===0&&(
+          <div style={{textAlign:"center",padding:"24px",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.1)",borderRadius:14,color:"#6b7c72",fontSize:13}}>
+            Inga uppgifter. Fota en växt med AI-kameran för att få rekommendationer som du kan lägga till här.
+          </div>
+        )}
+
+        {activeTasks.map((t,idx)=>{
+          const borderColor = pc[t.priority]||"#4ade80";
+          const isTopPriority = idx===0 && activeTasks.length>1;
+          const plant = plants.find(p=>p.id===t.plantId||p.name===t.plantName);
+          return (
+            <div key={t.id} style={{background: isTopPriority?"rgba(248,113,113,0.06)":"rgba(255,255,255,0.03)",border:`1px solid ${isTopPriority?"rgba(248,113,113,0.2)":"rgba(255,255,255,0.07)"}`,borderLeft:`3px solid ${borderColor}`,borderRadius:12,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"flex-start",gap:12}}>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,paddingTop:2}}>
+                <span style={{fontSize:20}}>{t.emoji||"🌱"}</span>
+                <div style={{fontSize:10,fontWeight:700,color:borderColor,background:`${borderColor}22`,borderRadius:10,padding:"1px 6px",minWidth:20,textAlign:"center"}}>
+                  {isTopPriority?"#1":`#${idx+1}`}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      ))}
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                  {isTopPriority&&<span style={{fontSize:10,background:"rgba(248,113,113,0.2)",color:"#f87171",borderRadius:10,padding:"1px 7px",fontWeight:700}}>VIKTIGAST</span>}
+                  {t.priority==="critical"&&!isTopPriority&&<span style={{fontSize:10,background:"rgba(248,113,113,0.15)",color:"#f87171",borderRadius:10,padding:"1px 7px",fontWeight:600}}>BRÅDSKANDE</span>}
+                </div>
+                <div style={{fontSize:14,fontWeight:isTopPriority?700:500}}>{t.task}</div>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginTop:3}}>
+                  <span style={{fontSize:12,color:"#6b7c72"}}>{t.plantName}</span>
+                  {plant&&<span style={{fontSize:11,color:pc[plant.status]||"#aaa"}}>● {plant.health}% hälsa</span>}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:5,alignItems:"center",paddingTop:2}}>
+                {t.task.toLowerCase().includes("vattna")&&(
+                  <Btn style={{padding:"4px 8px",fontSize:11}} onClick={()=>{const p=plants.find(x=>x.id===t.plantId||x.name===t.plantName);if(p)waterPlant(p.id);}}>💧</Btn>
+                )}
+                <button onClick={()=>toggleSchedDone(t.id)} style={{width:24,height:24,borderRadius:7,border:`1.5px solid ${borderColor}`,background:"transparent",cursor:"pointer",fontSize:13,color:"#4ade80",display:"flex",alignItems:"center",justifyContent:"center"}}>✓</button>
+                <button onClick={()=>removeSchedTask(t.id)} style={{width:24,height:24,borderRadius:7,border:"1px solid rgba(248,113,113,0.3)",background:"transparent",cursor:"pointer",fontSize:11,color:"#f87171",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
+      {/* Done tasks */}
+      {doneTasks.length>0&&(
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#6b7c72",marginBottom:10,textTransform:"uppercase",letterSpacing:1.5}}>✓ Klara ({doneTasks.length})</div>
+          {doneTasks.map(t=>(
+            <div key={t.id} style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:12,padding:"10px 16px",marginBottom:6,display:"flex",alignItems:"center",gap:12,opacity:0.5}}>
+              <span style={{fontSize:18}}>{t.emoji||"🌱"}</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,textDecoration:"line-through"}}>{t.task}</div>
+                <div style={{fontSize:11,color:"#6b7c72"}}>{t.plantName}</div>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>toggleSchedDone(t.id)} style={{width:24,height:24,borderRadius:7,border:"1.5px solid #4ade80",background:"rgba(74,222,128,0.2)",cursor:"pointer",fontSize:13,color:"#4ade80",display:"flex",alignItems:"center",justifyContent:"center"}}>✓</button>
+                <button onClick={()=>removeSchedTask(t.id)} style={{width:24,height:24,borderRadius:7,border:"1px solid rgba(248,113,113,0.3)",background:"transparent",cursor:"pointer",fontSize:11,color:"#f87171",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Export */}
       <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:14,marginTop:8}}>
         <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>💾 Exportera data</div>
         <div style={{display:"flex",gap:8}}>
           <Btn style={{flex:1,textAlign:"center",fontSize:12,padding:"10px"}} onClick={exportJSON}>📥 JSON-backup</Btn>
           <Btn style={{flex:1,textAlign:"center",fontSize:12,padding:"10px"}} onClick={exportCSV}>📊 CSV (Excel)</Btn>
         </div>
-        <div style={{fontSize:12,color:"#6b7c72",marginTop:10,lineHeight:1.5}}>JSON innehåller all data inklusive skördelogg och tillväxtkurvor. CSV öppnas direkt i Excel/Numbers.</div>
+        <div style={{fontSize:12,color:"#6b7c72",marginTop:10,lineHeight:1.5}}>JSON innehåller all data inklusive skördelogg och tillväxtkurvor.</div>
       </div>
     </div>
   );
