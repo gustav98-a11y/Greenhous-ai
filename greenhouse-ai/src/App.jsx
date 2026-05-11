@@ -396,37 +396,6 @@ function CameraAnalysis({ plants, onAddPlant, onAddToSchedule, onClose, weather,
   }
 
 
-      const data = await res.json();
-
-      // Handle API-level errors
-      if(data.error) throw new Error(data.error.message||JSON.stringify(data.error));
-
-      const rawText = data.content?.map(b => b.type==="text" ? b.text : "").join("").trim() || "";
-      if(!rawText) throw new Error("Tomt svar från API");
-
-      // Strip markdown fences if present
-      const clean = rawText.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"").trim();
-      const parsed = JSON.parse(clean);
-
-      setResult(parsed);
-      setPhase("result");
-    } catch(e) {
-      setResult({
-        plant_name:"Analysfel",
-        variety_guess:"",
-        emoji:"⚠️",
-        health_score:0,
-        status:"warning",
-        diagnosis:`Fel: ${e.message||"Okänt fel"}. Kontrollera att bilden är tydlig och under 5 MB.`,
-        issues:[],
-        recommendations:["Använd en tydlig bild i bra ljus","Filen bör vara JPG eller PNG","Max 5 MB"],
-        confidence:0,
-        care_tips:""
-      });
-      setPhase("result");
-    }
-  }
-
   return (
     <Modal title="📷 Kamera & AI-analys" onClose={onClose}>
       {phase==="upload"&&(
